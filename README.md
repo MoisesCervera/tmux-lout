@@ -38,7 +38,8 @@ run '~/.tmux/plugins/tpm/tpm'
 Install it with `Prefix + I`.
 
 Add the shell integration near the end of `.zshrc`, after prompt and theme
-initialization:
+initialization. With Powerlevel10k, it must appear after both the theme and
+`.p10k.zsh` are sourced:
 
 ```zsh
 if [[ -n ${TMUX:-} ]]; then

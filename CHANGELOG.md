@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.1.1 - 2026-08-22
+
+### Fixed
+
+- Ignore prompt-only spans created by Powerlevel10k transient prompt redraws,
+  preventing duplicated command lines and incorrect command counts.
+- Clarify that the shell integration must load after Powerlevel10k.
+
 ## 0.1.0 - 2026-08-22
 
 ### Added

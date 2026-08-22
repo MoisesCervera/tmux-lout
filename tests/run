@@ -60,4 +60,18 @@ assert_capture 'wrapped command excludes a Unicode prompt' \
   --include-prompt off --include-command on --include-output off \
   --lens 1:17
 
+transient_prompt="$ROOT/tests/fixtures/transient-prompt.capture"
+
+assert_capture 'Powerlevel10k transient prompts are not duplicate commands' \
+  "$transient_prompt" $'$ speedtest\n\nSpeedtest result\n$ echo ok\n\nok' \
+  --count 3 --seq 2 \
+  --include-prompt on --include-command on --include-output on \
+  --lens 1:9 --lens 2:7
+
+assert_capture 'command filtering ignores transient prompt redraws' \
+  "$transient_prompt" $'speedtest\necho ok' \
+  --count 2 --seq 2 \
+  --include-prompt off --include-command on --include-output off \
+  --lens 1:9 --lens 2:7
+
 print -- "1..$tests"

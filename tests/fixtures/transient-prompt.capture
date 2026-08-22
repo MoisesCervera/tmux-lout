@@ -1,0 +1,11 @@
+0 PX ~ status
+1 - $ speedtest
+2 P $ speedtest
+3 O
+4 - Speedtest result
+5 PX ~/project status
+6 - $ echo ok
+7 P $ echo ok
+8 O
+9 - ok
+10 P $

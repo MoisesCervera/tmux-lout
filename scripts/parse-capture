@@ -74,7 +74,27 @@ while IFS= read -r raw; do
 done
 
 integer prompt_count=${#prompt_rows}
-integer completed_count=$(( prompt_count - 1 ))
+
+# A transient prompt redraw can leave two prompt-marked rows for one command:
+# the original prompt and the compact prompt drawn when the command is
+# accepted. Only the latter owns an output marker. Treat prompt spans without
+# an output marker as redraw artifacts rather than command blocks.
+typeset -a block_starts block_ends
+integer prompt_ordinal span_start span_end
+for (( prompt_ordinal = 1; prompt_ordinal < prompt_count; ++prompt_ordinal )); do
+  span_start=${prompt_rows[$prompt_ordinal]}
+  span_end=$(( prompt_rows[$(( prompt_ordinal + 1 ))] - 1 ))
+
+  for (( i = span_start; i <= span_end; ++i )); do
+    if [[ ${capture_flags[$i]} == *O* ]]; then
+      block_starts+=("$span_start")
+      block_ends+=("$span_end")
+      break
+    fi
+  done
+done
+
+integer completed_count=${#block_starts}
 
 if (( completed_count < 1 )); then
   print -u2 -- 'lout: no completed marked commands in this pane'
@@ -162,8 +182,8 @@ integer block_ordinal block_start block_end output_start command_seq
 local lengths_spec
 
 for (( block_ordinal = first_block; block_ordinal <= completed_count; ++block_ordinal )); do
-  block_start=${prompt_rows[$block_ordinal]}
-  block_end=$(( prompt_rows[$(( block_ordinal + 1 ))] - 1 ))
+  block_start=${block_starts[$block_ordinal]}
+  block_end=${block_ends[$block_ordinal]}
   output_start=0
 
   for (( i = block_start; i <= block_end; ++i )); do

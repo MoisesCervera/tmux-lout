@@ -4,7 +4,7 @@ emulate -L zsh
 setopt pipefail
 
 LOUT_DIR=${0:A:h:h}
-LOUT_VERSION=0.1.0
+LOUT_VERSION=0.1.1
 TMUX_BIN=${TMUX_BIN:-tmux}
 
 local pane=${TMUX_PANE:-}

@@ -3,7 +3,7 @@
 set -u
 
 LOUT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOUT_VERSION=0.1.0
+LOUT_VERSION=0.1.1
 
 set_default() {
   local option="$1"
