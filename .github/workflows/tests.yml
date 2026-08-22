@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install zsh on Ubuntu
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes zsh shellcheck
+
+      - name: Run parser tests
+        run: ./tests/run
+
+      - name: Check shell syntax
+        run: |
+          bash -n lout.tmux
+          zsh -n shell/lout.zsh scripts/lout scripts/parse-capture tests/run
+
+      - name: Run ShellCheck
+        if: runner.os == 'Linux'
+        run: shellcheck -x lout.tmux

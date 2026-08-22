@@ -1,0 +1,63 @@
+#!/usr/bin/env zsh
+
+emulate -L zsh
+setopt errexit nounset pipefail
+
+ROOT=${0:A:h:h}
+PARSER="$ROOT/scripts/parse-capture"
+integer tests=0
+
+assert_capture() {
+  local name=$1
+  local fixture=$2
+  local expected=$3
+  shift 3
+  local actual
+
+  actual=$("$PARSER" "$@" < "$fixture")
+  if [[ $actual != "$expected" ]]; then
+    print -u2 -- "FAIL: $name"
+    print -u2 -- '--- expected ---'
+    print -u2 -r -- "$expected"
+    print -u2 -- '--- actual ---'
+    print -u2 -r -- "$actual"
+    exit 1
+  fi
+  (( ++tests ))
+  print -- "ok $tests - $name"
+}
+
+basic="$ROOT/tests/fixtures/basic.capture"
+
+assert_capture 'complete transcript' "$basic" $'❯ echo one\none\nline two\n❯ git status\nclean' \
+  --count 2 --seq 2 \
+  --include-prompt on --include-command on --include-output on
+
+assert_capture 'typed commands only' "$basic" $'echo one\ngit status' \
+  --count 2 --seq 2 \
+  --include-prompt off --include-command on --include-output off \
+  --lens 1:8 --lens 2:10
+
+assert_capture 'prompts only' "$basic" $'❯ \n❯ ' \
+  --count 2 --seq 2 \
+  --include-prompt on --include-command off --include-output off \
+  --lens 1:8 --lens 2:10
+
+assert_capture 'output only' "$basic" $'one\nline two\nclean' \
+  --count 2 --seq 2 \
+  --include-prompt off --include-command off --include-output on \
+  --lens 1:8 --lens 2:10
+
+assert_capture 'shell invocation excludes active lout' \
+  "$ROOT/tests/fixtures/active-lout.capture" $'echo one\none' \
+  --count 1 --seq 2 \
+  --include-prompt off --include-command on --include-output on \
+  --lens 1:8 --lens 2:6
+
+assert_capture 'wrapped command excludes a Unicode prompt' \
+  "$ROOT/tests/fixtures/wrapped.capture" $'printf abcdef\nghij' \
+  --count 1 --seq 1 \
+  --include-prompt off --include-command on --include-output off \
+  --lens 1:17
+
+print -- "1..$tests"

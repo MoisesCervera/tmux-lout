@@ -1,0 +1,186 @@
+#!/usr/bin/env zsh
+
+emulate -L zsh
+setopt pipefail
+
+LOUT_DIR=${0:A:h:h}
+LOUT_VERSION=0.1.0
+TMUX_BIN=${TMUX_BIN:-tmux}
+
+local pane=${TMUX_PANE:-}
+local count=''
+local print_only=off
+local include_prompt=''
+local include_command=''
+local include_output=''
+
+usage() {
+  print -- 'Usage: lout [N] [--no-prompt] [--no-command] [--no-output] [--print]'
+  print -- ''
+  print -- 'Copy the previous N completed command blocks from the current tmux pane.'
+}
+
+while (( $# )); do
+  case "$1" in
+    --pane)
+      pane=$2
+      shift 2
+      ;;
+    --count)
+      count=$2
+      shift 2
+      ;;
+    --prompt)
+      include_prompt=on
+      shift
+      ;;
+    --no-prompt)
+      include_prompt=off
+      shift
+      ;;
+    --command)
+      include_command=on
+      shift
+      ;;
+    --no-command)
+      include_command=off
+      shift
+      ;;
+    --output)
+      include_output=on
+      shift
+      ;;
+    --no-output)
+      include_output=off
+      shift
+      ;;
+    --print|-p)
+      print_only=on
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    --version)
+      print -- "lout $LOUT_VERSION"
+      exit 0
+      ;;
+    <->)
+      [[ -z $count ]] || {
+        print -u2 -- 'lout: count was specified more than once'
+        exit 2
+      }
+      count=$1
+      shift
+      ;;
+    *)
+      print -u2 -- "lout: unknown argument: $1"
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+[[ -n $pane ]] || {
+  print -u2 -- 'lout: run this command inside tmux'
+  exit 2
+}
+
+get_global_option() {
+  local option=$1
+  local fallback=$2
+  local value
+
+  value=$($TMUX_BIN show-options -gqv "$option" 2>/dev/null)
+  [[ -n $value ]] && print -rn -- "$value" || print -rn -- "$fallback"
+}
+
+[[ -n $count ]] || count=$(get_global_option @lout-default-count 1)
+[[ $count == <-> ]] && (( count > 0 )) || {
+  $TMUX_BIN display-message -t "$pane" 'lout: count must be a positive integer' 2>/dev/null
+  exit 2
+}
+
+[[ -n $include_prompt ]] || include_prompt=$(get_global_option @lout-include-prompt on)
+[[ -n $include_command ]] || include_command=$(get_global_option @lout-include-command on)
+[[ -n $include_output ]] || include_output=$(get_global_option @lout-include-output on)
+
+for content_setting in "$include_prompt" "$include_command" "$include_output"; do
+  [[ $content_setting == on || $content_setting == off ]] || {
+    print -u2 -- 'lout: content settings must be on or off'
+    exit 2
+  }
+done
+
+local metadata_seq
+metadata_seq=$($TMUX_BIN show-options -pqv -t "$pane" @lout_seq 2>/dev/null)
+[[ $metadata_seq == <-> ]] || metadata_seq=0
+
+typeset -a parser_args
+parser_args=(
+  --count "$count"
+  --seq "$metadata_seq"
+  --include-prompt "$include_prompt"
+  --include-command "$include_command"
+  --include-output "$include_output"
+)
+
+integer first_metadata=$(( metadata_seq - count - 2 ))
+(( first_metadata < 1 )) && first_metadata=1
+integer metadata_id
+local metadata_value
+for (( metadata_id = first_metadata; metadata_id <= metadata_seq; ++metadata_id )); do
+  metadata_value=$($TMUX_BIN show-options -pqv -t "$pane" "@lout_lens_${metadata_id}" 2>/dev/null)
+  [[ -n $metadata_value ]] && parser_args+=(--lens "${metadata_id}:${metadata_value}")
+done
+
+local rendered
+rendered=$(
+  $TMUX_BIN capture-pane -p -L -F -S - -E - -t "$pane" |
+    "$LOUT_DIR/scripts/parse-capture" "${parser_args[@]}"
+)
+local render_status=$?
+
+if (( render_status != 0 )); then
+  $TMUX_BIN display-message -t "$pane" 'lout: unable to copy command blocks' 2>/dev/null
+  exit $render_status
+fi
+
+local trailing_newline
+trailing_newline=$(get_global_option @lout-trailing-newline on)
+[[ $trailing_newline == on ]] && rendered+=$'\n'
+
+if [[ $print_only == on ]]; then
+  print -rn -- "$rendered"
+  exit 0
+fi
+
+local clipboard_command
+clipboard_command=$($TMUX_BIN show-options -gqv @lout-clipboard-command 2>/dev/null)
+if [[ -z $clipboard_command ]]; then
+  if (( $+commands[pbcopy] )); then
+    clipboard_command=pbcopy
+  elif (( $+commands[wl-copy] )); then
+    clipboard_command=wl-copy
+  elif (( $+commands[xclip] )); then
+    clipboard_command='xclip -selection clipboard'
+  elif (( $+commands[xsel] )); then
+    clipboard_command='xsel --clipboard --input'
+  else
+    print -u2 -- 'lout: no clipboard command found; set @lout-clipboard-command'
+    $TMUX_BIN display-message -t "$pane" 'lout: no clipboard command found' 2>/dev/null
+    exit 6
+  fi
+fi
+
+print -rn -- "$rendered" | eval "$clipboard_command"
+local clipboard_status=$?
+if (( clipboard_status != 0 )); then
+  $TMUX_BIN display-message -t "$pane" 'lout: clipboard command failed' 2>/dev/null
+  exit $clipboard_status
+fi
+
+if [[ $(get_global_option @lout-status on) == on ]]; then
+  $TMUX_BIN display-message -t "$pane" 'lout: copied to clipboard' 2>/dev/null
+fi

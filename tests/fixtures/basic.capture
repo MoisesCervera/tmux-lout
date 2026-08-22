@@ -1,0 +1,6 @@
+0 PX ❯ echo one
+1 O one
+2 - line two
+3 PX ❯ git status
+4 O clean
+5 PX ❯

@@ -1,0 +1,213 @@
+#!/usr/bin/env zsh
+
+emulate -L zsh
+setopt extendedglob
+
+integer requested_count=1
+integer metadata_seq=0
+local include_prompt=on
+local include_command=on
+local include_output=on
+typeset -A lens_by_seq
+
+usage() {
+  print -u2 -- 'usage: parse-capture --count N --seq N [content options] [--lens SEQ:LENGTHS]'
+}
+
+while (( $# )); do
+  case "$1" in
+    --count)
+      requested_count=$2
+      shift 2
+      ;;
+    --seq)
+      metadata_seq=$2
+      shift 2
+      ;;
+    --include-prompt)
+      include_prompt=$2
+      shift 2
+      ;;
+    --include-command)
+      include_command=$2
+      shift 2
+      ;;
+    --include-output)
+      include_output=$2
+      shift 2
+      ;;
+    --lens)
+      local lens_id=${2%%:*}
+      lens_by_seq[$lens_id]=${2#*:}
+      shift 2
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+done
+
+[[ $requested_count == <-> ]] && (( requested_count > 0 )) || {
+  print -u2 -- 'lout: count must be a positive integer'
+  exit 2
+}
+
+typeset -a capture_flags capture_text prompt_rows
+local raw rest flags text
+integer row=0
+
+while IFS= read -r raw; do
+  [[ $raw == *' '* ]] || continue
+  rest=${raw#* }
+  flags=${rest%% *}
+  if [[ $rest == *' '* ]]; then
+    text=${rest#* }
+  else
+    text=''
+  fi
+
+  (( ++row ))
+  capture_flags[$row]=$flags
+  capture_text[$row]=$text
+  [[ $flags == *P* ]] && prompt_rows+=("$row")
+done
+
+integer prompt_count=${#prompt_rows}
+integer completed_count=$(( prompt_count - 1 ))
+
+if (( completed_count < 1 )); then
+  print -u2 -- 'lout: no completed marked commands in this pane'
+  exit 3
+fi
+
+(( requested_count > completed_count )) && requested_count=$completed_count
+
+integer trailing_start=${prompt_rows[$prompt_count]}
+integer active_offset=0 i
+for (( i = trailing_start; i <= ${#capture_flags}; ++i )); do
+  if [[ ${capture_flags[$i]} == *O* ]]; then
+    active_offset=1
+    break
+  fi
+done
+
+typeset -ga _lout_prompt_parts _lout_command_parts
+
+split_input_region() {
+  emulate -L zsh
+
+  local lengths_spec=$1
+  shift
+  local -a source_lines=("$@")
+  local -a command_lengths
+  typeset -a cut_start
+  integer source_row=${#source_lines}
+  integer length_index remaining available take start column
+
+  _lout_prompt_parts=()
+  _lout_command_parts=()
+  command_lengths=("${(@s:,:)lengths_spec}")
+
+  for (( length_index = ${#command_lengths}; length_index >= 1; --length_index )); do
+    remaining=${command_lengths[$length_index]}
+    [[ $remaining == <-> ]] || return 1
+
+    if (( source_row < 1 )); then
+      return 1
+    fi
+
+    if (( remaining == 0 )); then
+      available=${#source_lines[$source_row]}
+      cut_start[$source_row]=$(( available + 1 ))
+      (( --source_row ))
+      continue
+    fi
+
+    while (( remaining > 0 && source_row >= 1 )); do
+      available=${#source_lines[$source_row]}
+      take=$(( remaining < available ? remaining : available ))
+      start=$(( available - take + 1 ))
+      cut_start[$source_row]=$start
+      (( remaining -= take ))
+      if (( remaining > 0 )); then
+        (( --source_row ))
+      fi
+    done
+
+    (( remaining == 0 )) || return 1
+    (( --source_row ))
+  done
+
+  for (( i = 1; i <= ${#source_lines}; ++i )); do
+    if (( ${+cut_start[$i]} )); then
+      start=${cut_start[$i]}
+      if (( start > 1 )); then
+        _lout_prompt_parts+=("${source_lines[$i][1,$(( start - 1 ))]}")
+      fi
+      if (( start <= ${#source_lines[$i]} )); then
+        _lout_command_parts+=("${source_lines[$i][$start,-1]}")
+      else
+        _lout_command_parts+=('')
+      fi
+    else
+      _lout_prompt_parts+=("${source_lines[$i]}")
+    fi
+  done
+}
+
+typeset -a result_lines input_lines output_lines
+integer first_block=$(( completed_count - requested_count + 1 ))
+integer block_ordinal block_start block_end output_start command_seq
+local lengths_spec
+
+for (( block_ordinal = first_block; block_ordinal <= completed_count; ++block_ordinal )); do
+  block_start=${prompt_rows[$block_ordinal]}
+  block_end=$(( prompt_rows[$(( block_ordinal + 1 ))] - 1 ))
+  output_start=0
+
+  for (( i = block_start; i <= block_end; ++i )); do
+    if [[ ${capture_flags[$i]} == *O* ]]; then
+      output_start=$i
+      break
+    fi
+  done
+
+  if (( output_start > 0 )); then
+    input_lines=("${capture_text[@][$block_start,$(( output_start - 1 ))]}")
+    output_lines=("${capture_text[@][$output_start,$block_end]}")
+  else
+    input_lines=("${capture_text[@][$block_start,$block_end]}")
+    output_lines=()
+  fi
+
+  if [[ $include_prompt == on && $include_command == on ]]; then
+    result_lines+=("${input_lines[@]}")
+  elif [[ $include_prompt == on || $include_command == on ]]; then
+    command_seq=$(( metadata_seq - active_offset - (completed_count - block_ordinal) ))
+    lengths_spec=${lens_by_seq[$command_seq]-}
+    if [[ -z $lengths_spec ]] || ! split_input_region "$lengths_spec" "${input_lines[@]}"; then
+      print -u2 -- "lout: missing command-boundary metadata for command $command_seq"
+      exit 4
+    fi
+
+    if [[ $include_prompt == on ]]; then
+      result_lines+=("${_lout_prompt_parts[@]}")
+    else
+      result_lines+=("${_lout_command_parts[@]}")
+    fi
+  fi
+
+  if [[ $include_output == on ]]; then
+    result_lines+=("${output_lines[@]}")
+  fi
+done
+
+(( ${#result_lines} )) || {
+  print -u2 -- 'lout: the selected content is empty'
+  exit 5
+}
+
+for text in "${result_lines[@]}"; do
+  print -r -- "$text"
+done
