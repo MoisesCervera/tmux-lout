@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.1.2 - 2026-08-22
+
+### Fixed
+
+- Exclude direct `lout` invocations from zsh command history and `HISTFILE`.
+
 ## 0.1.1 - 2026-08-22
 
 ### Fixed

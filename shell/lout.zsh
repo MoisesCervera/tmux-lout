@@ -95,9 +95,25 @@ _lout_precmd() {
   fi
 }
 
+_lout_zshaddhistory() {
+  emulate -L zsh
+  setopt extendedglob
+
+  local line=${1%%$'\n'}
+  line=${line##[[:space:]]#}
+
+  # Returning 1 tells zsh not to add the line to its internal history or
+  # write it to HISTFILE. Match only direct invocations of the lout function.
+  if [[ $line == lout || $line == lout[[:space:]]* ]]; then
+    return 1
+  fi
+  return 0
+}
+
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _lout_precmd
 add-zsh-hook preexec _lout_preexec
+add-zsh-hook zshaddhistory _lout_zshaddhistory
 
 lout() {
   "$_LOUT_PLUGIN_DIR/scripts/lout" "$@"

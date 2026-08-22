@@ -74,4 +74,31 @@ assert_capture 'command filtering ignores transient prompt redraws' \
   --include-prompt off --include-command on --include-output off \
   --lens 1:9 --lens 2:7
 
+source "$ROOT/shell/lout.zsh"; add-zsh-hook -d precmd _lout_precmd; add-zsh-hook -d preexec _lout_preexec; add-zsh-hook -d zshaddhistory _lout_zshaddhistory
+
+assert_history_status() {
+  local name=$1
+  local expected=$2
+  local line=$3
+  local actual
+
+  if _lout_zshaddhistory "$line"; then
+    actual=0
+  else
+    actual=$?
+  fi
+
+  if (( actual != expected )); then
+    print -u2 -- "FAIL: $name (expected status $expected, got $actual)"
+    exit 1
+  fi
+  (( ++tests ))
+  print -- "ok $tests - $name"
+}
+
+assert_history_status 'bare lout is excluded from zsh history' 1 $'lout\n'
+assert_history_status 'lout arguments are excluded from zsh history' 1 $'  lout 3 --print\n'
+assert_history_status 'similar command names remain in zsh history' 0 $'loutish 3\n'
+assert_history_status 'unrelated commands remain in zsh history' 0 $'echo lout\n'
+
 print -- "1..$tests"

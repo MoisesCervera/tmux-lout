@@ -12,6 +12,7 @@ output logs, or use tmux paste buffers.
 - Preserves rendered text, physical wrapping, blank lines, stdout, and stderr.
 - Includes or excludes prompts, typed commands, and output independently.
 - Provides the `lout` command and a configurable tmux key binding.
+- Excludes direct `lout` invocations from zsh command history.
 - Supports Powerlevel10k without requiring it.
 - Detects `pbcopy`, `wl-copy`, `xclip`, and `xsel`.
 - Keeps only numeric command-boundary metadata for the lifetime of each pane.
@@ -172,6 +173,11 @@ project.
 `tmux-lout` does not create a transcript database or log file. Captured text is
 held in memory only long enough to write it to the clipboard command. Numeric
 boundary metadata disappears when its tmux pane is destroyed.
+
+Direct `lout` invocations are rejected by a zsh history hook and are not
+written to `HISTFILE`. zsh may retain the rejected line internally until the
+next command is entered, as specified by its history-hook behavior. The tmux
+key binding never enters a command into the shell.
 
 The source text remains subject to the pane's configured tmux history limit.
 Text already discarded by tmux cannot be recovered.
